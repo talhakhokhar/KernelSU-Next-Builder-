@@ -10,7 +10,7 @@ on:
       kernel_branch:
         description: '🌿 Branch kernel source'
         required: true
-        default: 'fourteen'
+        default: 'sixteen-qpr1'
       defconfig:
         description: '🧪 Kernel defconfig'
         required: true
