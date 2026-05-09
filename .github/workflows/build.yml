@@ -6,15 +6,15 @@ on:
       kernel_source:
         description: '🔗 URL kernel source'
         required: true
-        default: 'https://github.com/pixelos-lunaa/kernel_oneplus_sm8350'
+        default: 'https://github.com/pixelos-lunaa/kernel_oneplus_sm8350'  # <-- Official kernel source
       kernel_branch:
         description: '🌿 Branch kernel source'
         required: true
-        default: 'sixteen-qpr1'
+        default: 'fourteen'             # <-- Updated to 'fourteen' for your A14 ROM
       defconfig:
         description: '🧪 Kernel defconfig'
         required: true
-        default: 'qgki_defconfig'           # <-- corrected to qgki_defconfig
+        default: 'qgki_defconfig'       # <-- Corrected base defconfig
       anykernel:
         description: '📦 Use AnyKernel3 packaging?'
         required: true
@@ -79,19 +79,19 @@ jobs:
                 CROSS_COMPILE=$GITHUB_WORKSPACE/aarch64-linux-android-4.9/bin/aarch64-linux-android- \
                 CROSS_COMPILE_ARM32=$GITHUB_WORKSPACE/arm-linux-androideabi-4.9/bin/arm-linux-androideabi-"
           cd kernel-source
-
-          # 1. Generate base .config using qgki_defconfig (now with full drivers)
+          
+          # 1. Generate base .config using qgki_defconfig
           make ${args} ${{ github.event.inputs.defconfig }}
-
-          # 2. Merge the device-specific vendor fragment into the out-of-tree .config
+          
+          # 2. Merge the device-specific vendor fragment
           scripts/kconfig/merge_config.sh -m ../out/.config arch/arm64/configs/vendor/oplus_yupik_QGKI.config
-
-          # 3. Remove any stray .config from source tree
+          
+          # 3. Clean up any stray .config from source tree
           rm -f .config
-
+          
           # 4. Finalize configuration
           make ${args} olddefconfig
-
+          
           # 5. Build the kernel
           make -j$(nproc) ${args}
 
