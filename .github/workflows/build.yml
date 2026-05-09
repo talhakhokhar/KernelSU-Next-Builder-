@@ -6,15 +6,15 @@ on:
       kernel_source:
         description: '🔗 URL kernel source'
         required: true
-        default: 'https://github.com/pixelos-lunaa/kernel_oneplus_sm8350'  # <-- Official kernel source
+        default: 'https://github.com/pixelos-lunaa/kernel_oneplus_sm8350'
       kernel_branch:
         description: '🌿 Branch kernel source'
         required: true
-        default: 'fourteen'             # <-- Updated to 'fourteen' for your A14 ROM
+        default: 'fourteen'
       defconfig:
         description: '🧪 Kernel defconfig'
         required: true
-        default: 'qgki_defconfig'       # <-- Corrected base defconfig
+        default: 'vendor/lahaina-qgki_defconfig'          # <-- changed
       anykernel:
         description: '📦 Use AnyKernel3 packaging?'
         required: true
@@ -68,32 +68,44 @@ jobs:
 
       - name: ⚙️ Build Kernel
         run: |
+          export ARCH=arm64
+          export SUBARCH=arm64
           export KBUILD_BUILD_USER="${{ github.event.inputs.developer }}"
           export KBUILD_BUILD_HOST="workspace"
-          export PATH=$GITHUB_WORKSPACE/clang/bin:${PATH}
+          export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+
           args="ARCH=arm64 \
-                LLVM=1 \
-                LLVM_IAS=1 \
                 O=../out \
-                CLANG_TRIPLE=aarch64-linux-gnu- \
-                CROSS_COMPILE=$GITHUB_WORKSPACE/aarch64-linux-android-4.9/bin/aarch64-linux-android- \
-                CROSS_COMPILE_ARM32=$GITHUB_WORKSPACE/arm-linux-androideabi-4.9/bin/arm-linux-androideabi-"
+                CC=clang \
+                LLVM=1 \
+                LLVM_IAS=1"
+
           cd kernel-source
-          
-          # 1. Generate base .config using qgki_defconfig
+
+          # 1. Generate config using the lahaina-qgki base
           make ${args} ${{ github.event.inputs.defconfig }}
-          
+
           # 2. Merge the device-specific vendor fragment
-          scripts/kconfig/merge_config.sh -m ../out/.config arch/arm64/configs/vendor/oplus_yupik_QGKI.config
-          
-          # 3. Clean up any stray .config from source tree
+          scripts/kconfig/merge_config.sh \
+            -m ../out/.config \
+            arch/arm64/configs/vendor/oplus_yupik_QGKI.config
+
+          # 3. Enable KernelSU and required features
+          scripts/config --file ../out/.config \
+            -e KSU \
+            -e KSU_MANUAL_HOOK \
+            -e OVERLAY_FS \
+            -e TMPFS_XATTR
+
+          # 4. Clean up stray .config in source tree (if any)
           rm -f .config
-          
-          # 4. Finalize configuration
+
+          # 5. Finalize config
           make ${args} olddefconfig
-          
-          # 5. Build the kernel
+
+          # 6. Build the kernel and dtbo
           make -j$(nproc) ${args}
+          make ${args} dtbo.img
 
       - name: 📦 Package with AnyKernel3
         if: ${{ github.event.inputs.anykernel }}
