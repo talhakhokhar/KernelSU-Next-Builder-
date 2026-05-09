@@ -6,15 +6,15 @@ on:
       kernel_source:
         description: '🔗 URL kernel source'
         required: true
-        default: 'https://github.com/lynxdevproject/kernel-begonia'
+        default: 'https://github.com/aospa-lunaa/kernel_msm-5.4'
       kernel_branch:
         description: '🌿 Branch kernel source'
         required: true
-        default: 'main'
+        default: 'uvite'
       defconfig:
         description: '🧪 Kernel defconfig'
         required: true
-        default: 'begonia_user_defconfig'
+        default: 'vendor/lunaa_defconfig'
       anykernel:
         description: '📦 Use AnyKernel3 packaging?'
         required: true
@@ -31,16 +31,16 @@ on:
       zip_name:
         description: '📝 Output ZIP base name'
         required: false
-        default: 'ReogKernelSU'
+        default: 'KSU-Next-lunaa'
       developer:
         description: '👤 Developer name/ID'
         required: false
-        default: 'lynx@workspace'
+        default: 'lunaa-dev'
       enable_kernelsu_next:
         description: '🔘 Enable KernelSU-Next patch?'
         required: true
         type: boolean
-        default: false
+        default: true
 
 jobs:
   build-kernel:
@@ -60,22 +60,29 @@ jobs:
         run: |
           git clone --depth=1 ${{ github.event.inputs.kernel_source }} -b ${{ github.event.inputs.kernel_branch }} kernel-source
 
-      - name: 🧙 Inject KernelSU-Next (Legacy)
+      - name: 🧙 Integrate KernelSU-Next Legacy
         if: ${{ github.event.inputs.enable_kernelsu_next }}
         run: |
           cd kernel-source
-          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy
+          curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -s legacy
 
-      - name: 🔧 Enable KSU configs
+      - name: 🔧 Enable Required KSU Configs
         if: ${{ github.event.inputs.enable_kernelsu_next }}
         run: |
           cd kernel-source
-          DEFCONFIG_PATH=arch/arm64/configs/${{ github.event.inputs.defconfig }}
-          echo "CONFIG_KPROBES=y" >> "$DEFCONFIG_PATH"
-          echo "CONFIG_HAVE_KPROBES=y" >> "$DEFCONFIG_PATH"
-          echo "CONFIG_KPROBE_EVENTS=y" >> "$DEFCONFIG_PATH"
-          echo "CONFIG_KSU_KPROBE_HOOKS=y" >> "$DEFCONFIG_PATH"
-          echo "CONFIG_KSU=y" >> "$DEFCONFIG_PATH"
+          DEFCONFIG=arch/arm64/configs/${{ github.event.inputs.defconfig }}
+          echo "CONFIG_KPROBES=y" >> "$DEFCONFIG"
+          echo "CONFIG_KPROBE_EVENTS=y" >> "$DEFCONFIG"
+          echo "CONFIG_KSU_KPROBE_HOOKS=y" >> "$DEFCONFIG"
+          echo "CONFIG_KSU=y" >> "$DEFCONFIG"
+
+      - name: 🔧 Disable Werror (fix warnings-as-errors)
+        run: |
+          cd kernel-source
+          sed -i 's/-Werror//' Makefile
+          # Also disable CONFIG_WERROR if present
+          DEFCONFIG=arch/arm64/configs/${{ github.event.inputs.defconfig }}
+          sed -i 's/CONFIG_WERROR=y/CONFIG_WERROR=n/' "$DEFCONFIG" || true
 
       - name: ⚙️ Build Kernel
         run: |
