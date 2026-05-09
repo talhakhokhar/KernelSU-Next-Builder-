@@ -14,7 +14,7 @@ on:
       defconfig:
         description: '🧪 Kernel defconfig'
         required: true
-        default: 'gki_defconfig'
+        default: 'qgki_defconfig'           # <-- corrected to qgki_defconfig
       anykernel:
         description: '📦 Use AnyKernel3 packaging?'
         required: true
@@ -80,17 +80,16 @@ jobs:
                 CROSS_COMPILE_ARM32=$GITHUB_WORKSPACE/arm-linux-androideabi-4.9/bin/arm-linux-androideabi-"
           cd kernel-source
 
-          # 1. Generate base .config in out-of-tree directory (../out/.config)
+          # 1. Generate base .config using qgki_defconfig (now with full drivers)
           make ${args} ${{ github.event.inputs.defconfig }}
 
-          # 2. Merge the device-specific vendor fragment into that out-of-tree .config
-          #    This avoids polluting the source tree
+          # 2. Merge the device-specific vendor fragment into the out-of-tree .config
           scripts/kconfig/merge_config.sh -m ../out/.config arch/arm64/configs/vendor/oplus_yupik_QGKI.config
 
-          # 3. Clean up any stray .config that may have been created in the source directory
+          # 3. Remove any stray .config from source tree
           rm -f .config
 
-          # 4. Finalize the merged configuration
+          # 4. Finalize configuration
           make ${args} olddefconfig
 
           # 5. Build the kernel
