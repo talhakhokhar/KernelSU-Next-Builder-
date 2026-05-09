@@ -6,15 +6,15 @@ on:
       kernel_source:
         description: '🔗 URL kernel source'
         required: true
-        default: 'https://github.com/mvimal2607/platform_kernel_oneplus_sm8350'  # <-- changed
+        default: 'https://github.com/pixelos-lunaa/kernel_oneplus_sm8350'
       kernel_branch:
         description: '🌿 Branch kernel source'
         required: true
-        default: 'sixteen'  # <-- changed (mvimal’s branch for RMX3363)
+        default: 'sixteen-qpr1'          # <-- Corrected to sixteen-qpr1
       defconfig:
         description: '🧪 Kernel defconfig'
         required: true
-        default: 'vendor/lunaa_defconfig'  # <-- changed (check your actual defconfig)
+        default: 'gki_defconfig'         # <-- Base defconfig (see note below)
       anykernel:
         description: '📦 Use AnyKernel3 packaging?'
         required: true
@@ -31,7 +31,7 @@ on:
       zip_name:
         description: '📝 Output ZIP base name'
         required: false
-        default: 'KSU-Next-RMX3363'  # <-- tweaked
+        default: 'PixelOS-KSU-Next-lunaa'
       developer:
         description: '👤 Developer name/ID'
         required: false
@@ -40,7 +40,7 @@ on:
         description: '🔘 Enable KernelSU-Next patch?'
         required: true
         type: boolean
-        default: true  # <-- changed to true for your use case
+        default: true
 
 jobs:
   build-kernel:
@@ -64,7 +64,6 @@ jobs:
         if: ${{ github.event.inputs.enable_kernelsu_next }}
         run: |
           cd kernel-source
-          # Use the official KernelSU-Next legacy injection for non‑GKI 5.4 kernels
           curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy
 
       - name: ⚙️ Build Kernel
@@ -80,7 +79,18 @@ jobs:
                 CROSS_COMPILE=$GITHUB_WORKSPACE/aarch64-linux-android-4.9/bin/aarch64-linux-android- \
                 CROSS_COMPILE_ARM32=$GITHUB_WORKSPACE/arm-linux-androideabi-4.9/bin/arm-linux-androideabi-"
           cd kernel-source
+
+          # 1. Generate full config using gki_defconfig as a base
           make ${args} ${{ github.event.inputs.defconfig }}
+
+          # 2. Merge the device-specific fragment to override/add necessary options
+          # This fragment was identified in the vendor directory and is critical for your device.
+          scripts/kconfig/merge_config.sh -m .config arch/arm64/configs/vendor/oplus_yupik_QGKI.config
+
+          # 3. Finalize the config
+          make ${args} olddefconfig
+
+          # 4. Build the kernel
           make -j$(nproc) ${args}
 
       - name: 📦 Package with AnyKernel3
