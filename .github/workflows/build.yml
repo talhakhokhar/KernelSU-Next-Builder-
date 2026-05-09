@@ -6,15 +6,15 @@ on:
       kernel_source:
         description: '🔗 URL kernel source'
         required: true
-        default: 'https://github.com/aospa-lunaa/kernel_msm-5.4'
+        default: 'https://github.com/mvimal2607/platform_kernel_oneplus_sm8350'  # <-- changed
       kernel_branch:
         description: '🌿 Branch kernel source'
         required: true
-        default: 'uvite'
+        default: 'sixteen'  # <-- changed (mvimal’s branch for RMX3363)
       defconfig:
         description: '🧪 Kernel defconfig'
         required: true
-        default: 'vendor/lunaa_defconfig'
+        default: 'vendor/lunaa_defconfig'  # <-- changed (check your actual defconfig)
       anykernel:
         description: '📦 Use AnyKernel3 packaging?'
         required: true
@@ -31,16 +31,16 @@ on:
       zip_name:
         description: '📝 Output ZIP base name'
         required: false
-        default: 'KSU-Next-lunaa'
+        default: 'KSU-Next-RMX3363'  # <-- tweaked
       developer:
         description: '👤 Developer name/ID'
         required: false
-        default: 'lunaa-dev'
+        default: 'lynx@workspace'
       enable_kernelsu_next:
         description: '🔘 Enable KernelSU-Next patch?'
         required: true
         type: boolean
-        default: true
+        default: true  # <-- changed to true for your use case
 
 jobs:
   build-kernel:
@@ -50,47 +50,31 @@ jobs:
       OUT_DIR: out
 
     steps:
-      - name: 🧰 Setup Toolchain (Clang 14 – compatible with 5.4)
+      - name: 🧰 Setup Toolchain
         run: |
           git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 aarch64-linux-android-4.9
           git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 arm-linux-androideabi-4.9
-          mkdir clang && curl -s https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android13-release/clang-r450784d.tar.gz -RLO && tar -C clang/ -xf clang-*.tar.gz
+          mkdir clang && curl -s https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-dev/clang-r487747c.tar.gz -RLO && tar -C clang/ -xf clang-*.tar.gz
 
       - name: ⏱️ Pull Kernel Source
         run: |
           git clone --depth=1 ${{ github.event.inputs.kernel_source }} -b ${{ github.event.inputs.kernel_branch }} kernel-source
 
-      - name: 🧙 Integrate KernelSU-Next Legacy
+      - name: 🧙 Inject KernelSU-Next (non‑GKI)
         if: ${{ github.event.inputs.enable_kernelsu_next }}
         run: |
           cd kernel-source
-          curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -s legacy
+          # Use the official KernelSU-Next legacy injection for non‑GKI 5.4 kernels
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy
 
-      - name: 🔧 Enable Required KSU Configs
-        if: ${{ github.event.inputs.enable_kernelsu_next }}
-        run: |
-          cd kernel-source
-          DEFCONFIG=arch/arm64/configs/${{ github.event.inputs.defconfig }}
-          echo "CONFIG_KPROBES=y" >> "$DEFCONFIG"
-          echo "CONFIG_KPROBE_EVENTS=y" >> "$DEFCONFIG"
-          echo "CONFIG_KSU_KPROBE_HOOKS=y" >> "$DEFCONFIG"
-          echo "CONFIG_KSU=y" >> "$DEFCONFIG"
-
-      - name: 🔧 Disable Werror (fix warnings-as-errors)
-        run: |
-          cd kernel-source
-          sed -i 's/-Werror//' Makefile
-          DEFCONFIG=arch/arm64/configs/${{ github.event.inputs.defconfig }}
-          sed -i 's/CONFIG_WERROR=y/CONFIG_WERROR=n/' "$DEFCONFIG" || true
-
-      - name: ⚙️ Build Kernel (GNU assembler, no integrated as)
+      - name: ⚙️ Build Kernel
         run: |
           export KBUILD_BUILD_USER="${{ github.event.inputs.developer }}"
           export KBUILD_BUILD_HOST="workspace"
           export PATH=$GITHUB_WORKSPACE/clang/bin:${PATH}
           args="ARCH=arm64 \
                 LLVM=1 \
-                LLVM_IAS=0 \
+                LLVM_IAS=1 \
                 O=../out \
                 CLANG_TRIPLE=aarch64-linux-gnu- \
                 CROSS_COMPILE=$GITHUB_WORKSPACE/aarch64-linux-android-4.9/bin/aarch64-linux-android- \
