@@ -6,11 +6,11 @@ on:
       kernel_source:
         description: '🔗 URL kernel source'
         required: true
-        default: 'https://github.com/pixelos-lunaa/kernel_oneplus_sm8350'
+        default: 'https://github.com/mvimal2607/kernel_oneplus_sm8350'
       kernel_branch:
         description: '🌿 Branch kernel source'
         required: true
-        default: 'sixteen-qpr1'
+        default: 'sixteen'
       defconfig:
         description: '🧪 Kernel defconfig'
         required: true
