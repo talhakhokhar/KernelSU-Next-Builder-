@@ -50,11 +50,11 @@ jobs:
       OUT_DIR: out
 
     steps:
-      - name: 🧰 Setup Toolchain
+      - name: 🧰 Setup Toolchain (Clang 14 – compatible with 5.4)
         run: |
           git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 aarch64-linux-android-4.9
           git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 arm-linux-androideabi-4.9
-          mkdir clang && curl -s https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-dev/clang-r487747c.tar.gz -RLO && tar -C clang/ -xf clang-*.tar.gz
+          mkdir clang && curl -s https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android13-release/clang-r450784d.tar.gz -RLO && tar -C clang/ -xf clang-*.tar.gz
 
       - name: ⏱️ Pull Kernel Source
         run: |
@@ -80,7 +80,6 @@ jobs:
         run: |
           cd kernel-source
           sed -i 's/-Werror//' Makefile
-          # Also disable CONFIG_WERROR if present
           DEFCONFIG=arch/arm64/configs/${{ github.event.inputs.defconfig }}
           sed -i 's/CONFIG_WERROR=y/CONFIG_WERROR=n/' "$DEFCONFIG" || true
 
