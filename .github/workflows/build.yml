@@ -60,15 +60,6 @@ jobs:
         run: |
           git clone --depth=1 ${{ github.event.inputs.kernel_source }} -b ${{ github.event.inputs.kernel_branch }} kernel-source
 
-      - name: 🔧 Strip incompatible Clang warning flags
-        run: |
-          cd kernel-source
-          # Comment out flags that cause "no such file or directory" errors with Clang
-          sed -i '/KBUILD_CFLAGS.*-Wstrict-prototypes/s/^/#/' scripts/Makefile.extrawarn
-          sed -i '/KBUILD_CFLAGS.*-Wimplicit-function-declaration/s/^/#/' scripts/Makefile.extrawarn
-          sed -i '/KBUILD_CFLAGS.*-Wreturn-type/s/^/#/' scripts/Makefile.extrawarn
-          sed -i '/KBUILD_CFLAGS.*-Wunknown-warning-option/s/^/#/' scripts/Makefile.extrawarn
-
       - name: 🧙 Integrate KernelSU-Next Legacy
         if: ${{ github.event.inputs.enable_kernelsu_next }}
         run: |
@@ -92,14 +83,14 @@ jobs:
           DEFCONFIG=arch/arm64/configs/${{ github.event.inputs.defconfig }}
           sed -i 's/CONFIG_WERROR=y/CONFIG_WERROR=n/' "$DEFCONFIG" || true
 
-      - name: ⚙️ Build Kernel
+      - name: ⚙️ Build Kernel (GNU assembler, no integrated as)
         run: |
           export KBUILD_BUILD_USER="${{ github.event.inputs.developer }}"
           export KBUILD_BUILD_HOST="workspace"
           export PATH=$GITHUB_WORKSPACE/clang/bin:${PATH}
           args="ARCH=arm64 \
                 LLVM=1 \
-                LLVM_IAS=1 \
+                LLVM_IAS=0 \
                 O=../out \
                 CLANG_TRIPLE=aarch64-linux-gnu- \
                 CROSS_COMPILE=$GITHUB_WORKSPACE/aarch64-linux-android-4.9/bin/aarch64-linux-android- \
