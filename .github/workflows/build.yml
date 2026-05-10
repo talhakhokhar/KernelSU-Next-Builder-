@@ -55,7 +55,7 @@ jobs:
         run: |
           git clone --depth=1 -b "${{ inputs.kernel_branch }}" "${{ inputs.kernel_source }}" kernel
 
-      # 3. Clean previous build artefacts (IMPORTANT)
+      # 3. Clean previous build artefacts
       - name: Clean source tree
         run: |
           cd kernel
@@ -82,7 +82,7 @@ jobs:
           export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
           make O=out ${{ inputs.defconfig }}
 
-      # 7. Merge vendor fragment
+      # 7. Merge vendor fragment (with cleanup)
       - name: Merge vendor config
         run: |
           cd kernel
@@ -92,26 +92,32 @@ jobs:
           fi
           make O=out olddefconfig
 
-      # 8. Integrate SUSFS patches and tooling
+      # 8. Integrate SUSFS (handles symlinked KernelSU)
       - name: Integrate SUSFS
         if: ${{ inputs.enable_susfs }}
         run: |
           cd kernel
-          # Clone the official SUSFS repository (kernel-5.4 branch for your non-GKI device)
           git clone https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-5.4 susfs4ksu --depth=1
 
-          # Copy the SUSFS kernel patch and apply it to the KernelSU directory
-          cp susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch KernelSU/
-          cd KernelSU && patch -p1 < 10_enable_susfs_for_ksu.patch && cd ..
+          # Determine actual KernelSU directory (may be a symlink)
+          KSU_DIR="KernelSU"
+          if [ -L "$KSU_DIR" ]; then
+            KSU_DIR=$(readlink -f "$KSU_DIR")
+          fi
+          echo "Using KernelSU directory: $KSU_DIR"
 
-          # Apply the main SUSFS kernel patch (specific to kernel 5.4)
+          # Copy and apply the KSU‑specific SUSFS patch
+          cp susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch "$KSU_DIR/"
+          cd "$KSU_DIR" && patch -p1 < 10_enable_susfs_for_ksu.patch && cd ..
+
+          # Apply the main kernel-wide SUSFS patch (for 5.4)
           patch -p1 < susfs4ksu/kernel_patches/50_add_susfs_in_kernel-5.4.patch
 
-          # Copy the necessary filesystem and header files
+          # Copy filesystem and header files
           cp susfs4ksu/kernel_patches/fs/* fs/
           cp susfs4ksu/kernel_patches/include/linux/* include/linux/
 
-          # Clean up the SUSFS source
+          # Clean up the SUSFS source to avoid polluting the kernel tree
           rm -rf susfs4ksu
 
       # 9. Enable SUSFS features in the kernel config
