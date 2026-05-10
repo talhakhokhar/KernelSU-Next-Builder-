@@ -1,4 +1,4 @@
-name: Universal Kernel Builder + KernelSU-Next (Stable)
+name: Universal Kernel Builder + KernelSU-Next (Stable) + SUSFS
 
 on:
   workflow_dispatch:
@@ -25,10 +25,13 @@ on:
         required: false
         default: "master"
       zip_name:
-        default: "Kernel-KSU-Next"
+        default: "Kernel-KSU-Next-SUSFS"
       developer:
         default: "builder"
       enable_kernelsu_next:
+        type: boolean
+        default: true
+      enable_susfs:
         type: boolean
         default: true
 
@@ -70,7 +73,7 @@ jobs:
         if: ${{ inputs.enable_kernelsu_next }}
         run: |
           cd kernel
-          curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -s legacy
+          curl -LSs https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh | bash -s legacy
 
       # 6. Base configuration
       - name: Configure kernel
@@ -79,18 +82,62 @@ jobs:
           export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
           make O=out ${{ inputs.defconfig }}
 
-      # 7. Merge vendor fragment (with clean-up)
+      # 7. Merge vendor fragment
       - name: Merge vendor config
         run: |
           cd kernel
           if [ -f arch/arm64/configs/vendor/oplus_yupik_QGKI.config ]; then
             scripts/kconfig/merge_config.sh -m out/.config arch/arm64/configs/vendor/oplus_yupik_QGKI.config
-            # CRITICAL: Delete any .config created by merge_config.sh inside source tree
             rm -f .config
           fi
           make O=out olddefconfig
 
-      # 8. Build kernel (including dtbo)
+      # 8. Integrate SUSFS patches and tooling
+      - name: Integrate SUSFS
+        if: ${{ inputs.enable_susfs }}
+        run: |
+          cd kernel
+          # Clone the official SUSFS repository (kernel-5.4 branch for your non-GKI device)
+          git clone https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-5.4 susfs4ksu --depth=1
+
+          # Copy the SUSFS kernel patch and apply it to the KernelSU directory
+          cp susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch KernelSU/
+          cd KernelSU && patch -p1 < 10_enable_susfs_for_ksu.patch && cd ..
+
+          # Apply the main SUSFS kernel patch (specific to kernel 5.4)
+          patch -p1 < susfs4ksu/kernel_patches/50_add_susfs_in_kernel-5.4.patch
+
+          # Copy the necessary filesystem and header files
+          cp susfs4ksu/kernel_patches/fs/* fs/
+          cp susfs4ksu/kernel_patches/include/linux/* include/linux/
+
+          # Clean up the SUSFS source
+          rm -rf susfs4ksu
+
+      # 9. Enable SUSFS features in the kernel config
+      - name: Enable SUSFS config
+        if: ${{ inputs.enable_susfs }}
+        run: |
+          cd kernel
+          scripts/config --file out/.config \
+            -e KSU_SUSFS \
+            -e KSU_SUSFS_HAS_MAGIC_MOUNT \
+            -e KSU_SUSFS_SUS_PATH \
+            -e KSU_SUSFS_SUS_MOUNT \
+            -e KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT \
+            -e KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT \
+            -e KSU_SUSFS_SUS_KSTAT \
+            -e KSU_SUSFS_SUS_OVERLAYFS \
+            -e KSU_SUSFS_TRY_UMOUNT \
+            -e KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+            -e KSU_SUSFS_ENABLE_LOG \
+            -e KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT \
+            -e KSU_SUSFS_SPOOF_UNAME \
+            -e KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
+            -e KSU_SUSFS_OPEN_REDIRECT
+          make O=out olddefconfig
+
+      # 10. Build kernel (including dtbo)
       - name: Build kernel
         run: |
           cd kernel
@@ -101,7 +148,7 @@ jobs:
             LLVM_IAS=1 \
             Image.gz dtbs dtbo.img 2>&1 | tee build.log
 
-      # 9. Package with AnyKernel3
+      # 11. Package with AnyKernel3
       - name: Package AnyKernel3
         if: ${{ inputs.anykernel }}
         run: |
@@ -113,7 +160,7 @@ jobs:
           cd ak3
           zip -r "../${{ inputs.zip_name }}-${{ inputs.developer }}.zip" .
 
-      # 10. Upload artifacts
+      # 12. Upload artifacts
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
