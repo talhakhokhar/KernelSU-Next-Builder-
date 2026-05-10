@@ -14,7 +14,7 @@ on:
       defconfig:
         description: '🧪 Kernel defconfig'
         required: true
-        default: 'vendor/lahaina-qgki_defconfig'          # <-- changed
+        default: 'vendor/lahaina-qgki_defconfig'
       anykernel:
         description: '📦 Use AnyKernel3 packaging?'
         required: true
@@ -82,30 +82,27 @@ jobs:
 
           cd kernel-source
 
-          # 1. Generate config using the lahaina-qgki base
           make ${args} ${{ github.event.inputs.defconfig }}
 
-          # 2. Merge the device-specific vendor fragment
           scripts/kconfig/merge_config.sh \
             -m ../out/.config \
             arch/arm64/configs/vendor/oplus_yupik_QGKI.config
 
-          # 3. Enable KernelSU and required features
           scripts/config --file ../out/.config \
-            -e KSU \
-            -e KSU_MANUAL_HOOK \
             -e OVERLAY_FS \
             -e TMPFS_XATTR
 
-          # 4. Clean up stray .config in source tree (if any)
           rm -f .config
-
-          # 5. Finalize config
           make ${args} olddefconfig
 
-          # 6. Build the kernel and dtbo
-          make -j$(nproc) ${args}
-          make ${args} dtbo.img
+          # Build everything, log to file, and also print to stdout
+          make -j$(nproc) ${args} Image.gz dtbs dtbo.img 2>&1 | tee build.log
+
+      - name: 📜 Show last build errors
+        if: failure()
+        run: |
+          echo "=== Last 200 lines of build.log ==="
+          tail -n 200 build.log
 
       - name: 📦 Package with AnyKernel3
         if: ${{ github.event.inputs.anykernel }}
