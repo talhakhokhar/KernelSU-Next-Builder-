@@ -4,131 +4,144 @@ on:
   workflow_dispatch:
     inputs:
       kernel_source:
-        description: '🔗 URL kernel source'
+        description: 'Kernel source URL'
         required: true
-        default: 'https://github.com/mvimal2607/kernel_oneplus_sm8350'
+        default: 'https://github.com/PixelOS-Devices/android_kernel_oneplus_sm8350'
+
       kernel_branch:
-        description: '🌿 Branch kernel source'
+        description: 'Kernel branch'
         required: true
-        default: 'sixteen'
+        default: 'sixteen-qpr2'
+
       defconfig:
-        description: '🧪 Kernel defconfig'
+        description: 'Defconfig'
         required: true
         default: 'vendor/lahaina-qgki_defconfig'
+
       anykernel:
-        description: '📦 Use AnyKernel3 packaging?'
+        description: 'Use AnyKernel3'
         required: true
         type: boolean
         default: true
+
       anykernel_repo:
-        description: '🌐 URL AnyKernel3 repo'
         required: false
         default: 'https://github.com/osm0sis/AnyKernel3.git'
+
       anykernel_branch:
-        description: '🌿 Branch of AnyKernel3'
         required: false
         default: 'master'
+
       zip_name:
-        description: '📝 Output ZIP base name'
         required: false
-        default: 'PixelOS-KSU-Next-lunaa'
+        default: 'Kernel-KSU-Next'
+
       developer:
-        description: '👤 Developer name/ID'
         required: false
-        default: 'lynx@workspace'
+        default: 'builder'
+
       enable_kernelsu_next:
-        description: '🔘 Enable KernelSU-Next patch?'
         required: true
         type: boolean
         default: true
 
+
 jobs:
-  build-kernel:
+  build:
     runs-on: ubuntu-latest
-    env:
-      TZ: Asia/Jakarta
-      OUT_DIR: out
 
     steps:
-      - name: 🧰 Setup Toolchain
+      - name: Setup Toolchain
         run: |
-          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 aarch64-linux-android-4.9
-          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 arm-linux-androideabi-4.9
-          mkdir clang && curl -s https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-dev/clang-r487747c.tar.gz -RLO && tar -C clang/ -xf clang-*.tar.gz
+          sudo apt update
+          sudo apt install -y git curl zip build-essential bc bison flex libssl-dev
 
-      - name: ⏱️ Pull Kernel Source
+          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 aarch64-gcc
+          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 arm-gcc
+
+          mkdir clang
+          curl -L https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/android14-dev/clang-r487747c.tar.gz | tar -xz -C clang
+
+      - name: Clone Kernel
         run: |
-          git clone --depth=1 ${{ github.event.inputs.kernel_source }} -b ${{ github.event.inputs.kernel_branch }} kernel-source
+          git clone --depth=1 -b "${{ inputs.kernel_branch }}" "${{ inputs.kernel_source }}" kernel
 
-      - name: 🧙 Inject KernelSU-Next (non‑GKI)
-        if: ${{ github.event.inputs.enable_kernelsu_next }}
+      - name: KernelSU-Next Inject
+        if: ${{ inputs.enable_kernelsu_next }}
         run: |
-          cd kernel-source
-          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy
+          cd kernel
+          curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -s legacy
 
-      - name: ⚙️ Build Kernel
+      - name: Build Kernel
         run: |
           export ARCH=arm64
           export SUBARCH=arm64
-          export KBUILD_BUILD_USER="${{ github.event.inputs.developer }}"
-          export KBUILD_BUILD_HOST="workspace"
-          export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+          export PATH=$PWD/clang/bin:$PATH
 
-          args="ARCH=arm64 \
-                O=../out \
-                CC=clang \
-                LLVM=1 \
-                LLVM_IAS=1"
+          ARGS="ARCH=arm64 \
+          O=out \
+          CC=clang \
+          LLVM=1 \
+          LLVM_IAS=1"
 
-          cd kernel-source
+          cd kernel
 
-          make ${args} ${{ github.event.inputs.defconfig }}
+          make $ARGS ${{ inputs.defconfig }}
 
-          scripts/kconfig/merge_config.sh \
-            -m ../out/.config \
-            arch/arm64/configs/vendor/oplus_yupik_QGKI.config
+          # merge vendor fragment safely (ignore warnings)
+          if [ -f arch/arm64/configs/vendor/oplus_yupik_QGKI.config ]; then
+            scripts/kconfig/merge_config.sh -m out/.config arch/arm64/configs/vendor/oplus_yupik_QGKI.config || true
+          fi
 
-          scripts/config --file ../out/.config \
+          scripts/config --file out/.config \
             -e OVERLAY_FS \
             -e TMPFS_XATTR
 
-          rm -f .config
-          make ${args} olddefconfig
+          make $ARGS olddefconfig
 
-          # Build everything, log to file, and also print to stdout
-          make -j$(nproc) ${args} Image.gz dtbs dtbo.img 2>&1 | tee build.log
+          echo "Starting build..."
+          make -j$(nproc) $ARGS Image.gz dtbs 2>&1 | tee build.log
 
-      - name: 📜 Show last build errors
-        if: failure()
+      - name: Verify Build Output
         run: |
-          echo "=== Last 200 lines of build.log ==="
-          tail -n 200 build.log
+          echo "Kernel output:"
+          ls -lah kernel/out/arch/arm64/boot/
 
-      - name: 📦 Package with AnyKernel3
-        if: ${{ github.event.inputs.anykernel }}
+          if ! ls kernel/out/arch/arm64/boot/Image* 1> /dev/null 2>&1; then
+            echo "❌ Kernel Image not found!"
+            exit 1
+          fi
+
+      - name: Package AnyKernel
+        if: ${{ inputs.anykernel }}
         run: |
-          git clone --depth=1 -b "${{ github.event.inputs.anykernel_branch }}" "${{ github.event.inputs.anykernel_repo }}" AnyKernel3
-          rm -rf AnyKernel3/.git* AnyKernel3/LICENSE AnyKernel3/README.md
-          IMG_PATH="out/arch/arm64/boot"
+          git clone --depth=1 -b "${{ inputs.anykernel_branch }}" "${{ inputs.anykernel_repo }}" AnyKernel3
+
+          rm -rf AnyKernel3/.git
+
+          IMG_DIR=kernel/out/arch/arm64/boot
+
           for img in Image.gz-dtb Image-dtb Image.gz Image; do
-            if [[ -f $IMG_PATH/$img ]]; then
-              cp $IMG_PATH/$img AnyKernel3/$img
+            if [ -f "$IMG_DIR/$img" ]; then
+              cp "$IMG_DIR/$img" AnyKernel3/
+              KERNEL_IMG=$img
               break
             fi
           done
-          if [[ -f $IMG_PATH/dtbo.img ]]; then
-            cp $IMG_PATH/dtbo.img AnyKernel3/dtbo.img
-          fi
-          DATE=$(date +'%Y-%m-%d_%H-%M')
-          ZIP_NAME="${{ github.event.inputs.zip_name }}-${{ github.event.inputs.developer }}-${DATE}.zip"
-          cd AnyKernel3
-          zip -r "${ZIP_NAME}" *
 
-      - name: ☁️ Upload Artifact
+          if [ -z "$KERNEL_IMG" ]; then
+            echo "❌ No kernel image found!"
+            exit 1
+          fi
+
+          cd AnyKernel3
+          ZIP="${{ inputs.zip_name }}-${{ inputs.developer }}-$(date +%Y%m%d-%H%M).zip"
+          zip -r "../$ZIP" .
+
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Kernel-${{ github.event.inputs.developer }}
+          name: Kernel-${{ inputs.developer }}
           path: |
-            AnyKernel3/*.zip
-            out/arch/arm64/boot/Image*
-            out/arch/arm64/boot/dtbo.img
+            *.zip
+            kernel/out/arch/arm64/boot/Image*
